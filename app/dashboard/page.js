@@ -35,19 +35,28 @@ export default function Dashboard() {
       setUser(user);
 
       if (user) {
-        const { data, error } = await supabase
-          .from("PDF_CHEF")
-          .select("*")
-          .eq("chef_id", user.id)
-          .order("created_at", { ascending: false });
-        if (!error) {
-          setStudySets(data.map((s) => ({
-            id: s.pdf_id,
-            title: s.title,
-            text: s.text,
-            createdAt: s.created_at,
-            sourceFileName: s.source_file_name,
-          })));
+        const { data: chefRow } = await supabase
+          .from("CHEF_DETAILS")
+          .select("chef_id")
+          .eq("chef_email", user.email)
+          .single();
+        if (chefRow) {
+          const { data, error } = await supabase
+            .from("PDF_CHEF")
+            .select("*")
+            .eq("chef_id", chefRow.chef_id)
+            .order("created_at", { ascending: false });
+          if (!error) {
+            setStudySets(data.map((s) => ({
+              id: s.pdf_id,
+              title: s.title,
+              text: s.text,
+              createdAt: s.created_at,
+              sourceFileName: s.source_file_name,
+            })));
+          } else {
+            setStudySets([]);
+          }
         } else {
           setStudySets([]);
         }

@@ -76,8 +76,14 @@ export default function UploadPage() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        const { data: chefRow, error: chefErr } = await supabase
+          .from("CHEF_DETAILS")
+          .select("chef_id")
+          .eq("chef_email", user.email)
+          .single();
+        if (chefErr || !chefRow) throw new Error("Chef profile not found. Please contact support.");
         const { error: insertError } = await supabase.from("PDF_CHEF").insert({
-          chef_id: user.id,
+          chef_id: chefRow.chef_id,
           title: setTitle,
           text,
           source_file_name: sourceFileName || null,
