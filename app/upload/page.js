@@ -63,16 +63,17 @@ export default function UploadPage() {
         text = pastedText.trim();
       }
 
-      const studySet = {
-        id: crypto.randomUUID(),
-        title: title.trim() || (tab === "pdf" ? file.name.replace(/\.pdf$/i, "") : "My Study Set"),
-        text,
-        createdAt: new Date().toISOString(),
-        ...(sourceFileName && { sourceFileName }),
-      };
+      const setTitle = title.trim() || (tab === "pdf" ? file.name.replace(/\.pdf$/i, "") : "My Study Set");
 
-      const existing = JSON.parse(localStorage.getItem("sq_studysets") || "[]");
-      localStorage.setItem("sq_studysets", JSON.stringify([studySet, ...existing]));
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: insertError } = await supabase.from("study_sets").insert({
+        user_id: user.id,
+        title: setTitle,
+        text,
+        source_file_name: sourceFileName || null,
+      });
+      if (insertError) throw new Error(insertError.message);
 
       router.push("/dashboard");
     } catch (err) {

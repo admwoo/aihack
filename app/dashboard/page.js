@@ -28,14 +28,31 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    const stored = localStorage.getItem("sq_studysets");
-    setStudySets(stored ? JSON.parse(stored) : []);
+    async function load() {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("study_sets")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error) {
+        setStudySets(data.map((s) => ({
+          id: s.id,
+          title: s.title,
+          text: s.text,
+          createdAt: s.created_at,
+          sourceFileName: s.source_file_name,
+        })));
+      } else {
+        setStudySets([]);
+      }
+    }
+    load();
   }, []);
 
-  function deleteStudySet(id) {
-    const updated = studySets.filter((s) => s.id !== id);
-    setStudySets(updated);
-    localStorage.setItem("sq_studysets", JSON.stringify(updated));
+  async function deleteStudySet(id) {
+    const supabase = createClient();
+    await supabase.from("study_sets").delete().eq("id", id);
+    setStudySets(studySets.filter((s) => s.id !== id));
   }
 
   return (

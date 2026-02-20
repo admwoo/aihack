@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { createClient } from "@/lib/supabase";
 
 // ─── Sprite Data (from throwing-demo) ────────────────────────────────────────
 
@@ -347,8 +348,26 @@ export default function BattlePage() {
   const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem("sq_studysets") || "[]");
-    setStudySet(stored.find((s) => s.id === id) ?? null);
+    async function load() {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("study_sets")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (data) {
+        setStudySet({
+          id: data.id,
+          title: data.title,
+          text: data.text,
+          createdAt: data.created_at,
+          sourceFileName: data.source_file_name,
+        });
+      } else {
+        setStudySet(null);
+      }
+    }
+    load();
   }, [id]);
 
   const q = questions?.[state.currentIndex];
