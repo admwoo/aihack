@@ -4,6 +4,13 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 
+function generateId() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef(null);
@@ -78,7 +85,7 @@ export default function UploadPage() {
         if (insertError) throw new Error(insertError.message);
       } else {
         const studySet = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           title: setTitle,
           text,
           createdAt: new Date().toISOString(),
