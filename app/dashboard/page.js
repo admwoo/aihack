@@ -36,12 +36,13 @@ export default function Dashboard() {
 
       if (user) {
         const { data, error } = await supabase
-          .from("study_sets")
+          .from("PDF_CHEF")
           .select("*")
+          .eq("chef_id", user.id)
           .order("created_at", { ascending: false });
         if (!error) {
           setStudySets(data.map((s) => ({
-            id: s.id,
+            id: s.pdf_id,
             title: s.title,
             text: s.text,
             createdAt: s.created_at,
@@ -61,7 +62,7 @@ export default function Dashboard() {
   async function deleteStudySet(id) {
     if (user) {
       const supabase = createClient();
-      await supabase.from("study_sets").delete().eq("id", id);
+      await supabase.from("PDF_CHEF").delete().eq("pdf_id", id);
     } else {
       const updated = studySets.filter((s) => s.id !== id);
       localStorage.setItem("sq_studysets", JSON.stringify(updated));

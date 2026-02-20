@@ -366,13 +366,13 @@ export default function BattlePage() {
 
       if (user) {
         const { data } = await supabase
-          .from("study_sets")
+          .from("PDF_CHEF")
           .select("*")
-          .eq("id", id)
+          .eq("pdf_id", id)
           .single();
         if (data) {
           setStudySet({
-            id: data.id,
+            id: data.pdf_id,
             title: data.title,
             text: data.text,
             createdAt: data.created_at,

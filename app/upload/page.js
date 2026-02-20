@@ -76,8 +76,8 @@ export default function UploadPage() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        const { error: insertError } = await supabase.from("study_sets").insert({
-          user_id: user.id,
+        const { error: insertError } = await supabase.from("PDF_CHEF").insert({
+          chef_id: user.id,
           title: setTitle,
           text,
           source_file_name: sourceFileName || null,
