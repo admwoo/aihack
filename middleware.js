@@ -1,7 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
-const PROTECTED = ['/dashboard', '/upload', '/quiz']
 const AUTH_PAGES = ['/login', '/register']
 
 export async function middleware(request) {
@@ -26,15 +25,7 @@ export async function middleware(request) {
   // Refresh the session if it exists (keeps the cookie fresh)
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isProtected = PROTECTED.some((p) => pathname.startsWith(p))
   const isAuthPage  = AUTH_PAGES.some((p) => pathname.startsWith(p))
-
-  // Not logged in trying to access protected route → send to login
-  if (!user && isProtected) {
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('next', pathname)
-    return NextResponse.redirect(loginUrl)
-  }
 
   // Already logged in trying to access login/register → send to dashboard
   if (user && isAuthPage) {

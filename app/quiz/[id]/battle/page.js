@@ -104,7 +104,7 @@ function FlyingFood({ food, startX, startY, endX, endY, onHit }) {
 
 // ─── Character ────────────────────────────────────────────────────────────────
 
-function Character({ sprite, side, animState }) {
+function Character({ sprite, side, animState, flip = false }) {
   const getTransform = () => {
     if (animState === "windup") {
       const pullX = side === "left" ? -12 : 12;
@@ -134,6 +134,7 @@ function Character({ sprite, side, animState }) {
         style={{
           width: 90, height: "auto",
           imageRendering: "auto",
+          transform: flip ? "scaleX(-1)" : undefined,
           filter: animState === "hit"
             ? "brightness(1.4) saturate(1.3) drop-shadow(3px 6px 8px rgba(0,0,0,0.3))"
             : "drop-shadow(3px 6px 8px rgba(0,0,0,0.25))",
@@ -152,6 +153,12 @@ const QUESTION_TYPE_OPTIONS = [
 ];
 
 const FOOD_EMOJIS = ["🍕","🌮","🍔","🍟","🌯","🥪","🍜","🧆","🥚","🍳","🧇","🥞","🫔","🥗","🍱"];
+
+const CHARACTERS = [
+  { id: "spud",    emoji: "🥔", name: "Spud",    tag: "The OG",      color: "#a0522d", locked: false },
+  { id: "tomato",  emoji: "🍅", name: "Tomato",  tag: "Hot Headed",  color: "#d63031", locked: false },
+  { id: "pretzel", emoji: "🥨", name: "Pretzel", tag: "DLC",         color: "#c8891c", locked: true, dlc: "Pretzel Bell Exclusive" },
+];
 const PLAYER_DAMAGE = 20;
 const WRONG_DAMAGE  = 15;
 const AI_DAMAGE     = 20;
@@ -191,6 +198,10 @@ function reducer(state, action) {
   switch (action.type) {
     case "SET_DIFFICULTY":
       return { ...state, difficulty: action.difficulty };
+    case "CHARACTER_SELECT":
+      return { ...state, status: "character_select" };
+    case "BACK_TO_SETUP":
+      return { ...state, status: "setup" };
     case "START":
       return { ...state, status: "player_turn", timeLeft: action.timeLimit, selectedAnswerId: null };
     case "TICK":
@@ -346,25 +357,33 @@ export default function BattlePage() {
   const idCounter = useRef(0);
   const [report, setReport] = useState(null);   // null = not started, string = content (may be streaming)
   const [reportLoading, setReportLoading] = useState(false);
+  const [playerChar, setPlayerChar] = useState("spud");
 
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("study_sets")
-        .select("*")
-        .eq("id", id)
-        .single();
-      if (data) {
-        setStudySet({
-          id: data.id,
-          title: data.title,
-          text: data.text,
-          createdAt: data.created_at,
-          sourceFileName: data.source_file_name,
-        });
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data } = await supabase
+          .from("study_sets")
+          .select("*")
+          .eq("id", id)
+          .single();
+        if (data) {
+          setStudySet({
+            id: data.id,
+            title: data.title,
+            text: data.text,
+            createdAt: data.created_at,
+            sourceFileName: data.source_file_name,
+          });
+        } else {
+          setStudySet(null);
+        }
       } else {
-        setStudySet(null);
+        const stored = JSON.parse(localStorage.getItem("sq_studysets") || "[]");
+        setStudySet(stored.find((s) => s.id === id) ?? null);
       }
     }
     load();
@@ -439,12 +458,13 @@ export default function BattlePage() {
     const arena = arenaRef.current;
     const arenaW = arena ? arena.offsetWidth : 600;
     const arenaH = arena ? arena.offsetHeight : 200;
-    const splatX = thrower === "spud" ? arenaW - 85 : 85;
+    // thrower === playerChar means thrower is on the left, so splat lands on the right
+    const splatX = thrower === playerChar ? arenaW - 85 : 85;
     const splatY = arenaH * 0.42;
     setCharStates((prev) => ({ ...prev, [target]: "hit" }));
     setTimeout(() => setCharStates((prev) => ({ ...prev, [target]: "idle" })), THROW_CONFIG.hitShakeDuration);
     setSplats((prev) => [...prev, { id: idCounter.current++, x: splatX, y: splatY }]);
-  }, []);
+  }, [playerChar]);
 
   const removeSplat = useCallback((id) => {
     setSplats((prev) => prev.filter((s) => s.id !== id));
@@ -453,7 +473,8 @@ export default function BattlePage() {
   // Trigger throw on player feedback
   useEffect(() => {
     if (state.status !== "player_feedback") return;
-    triggerThrow(state.playerCorrect ? "spud" : "tomato");
+    const aiChar = playerChar === "spud" ? "tomato" : "spud";
+    triggerThrow(state.playerCorrect ? playerChar : aiChar);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status]);
 
@@ -514,7 +535,7 @@ export default function BattlePage() {
   // Trigger throw on AI feedback
   useEffect(() => {
     if (state.status !== "ai_feedback") return;
-    if (state.aiCorrect) triggerThrow("tomato");
+    if (state.aiCorrect) triggerThrow(playerChar === "spud" ? "tomato" : "spud");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.status]);
 
@@ -540,29 +561,6 @@ export default function BattlePage() {
 
   // ── Setup screen ──
   if (state.status === "setup") {
-    async function startBattle() {
-      if (qTypes.length === 0) return;
-      setGenerating(true);
-      setGenError(null);
-      try {
-        const form = new FormData();
-        form.append("source", "text");
-        form.append("title", studySet.title);
-        form.append("count", String(qCount));
-        form.append("types", qTypes.join(","));
-        form.append("text", studySet.text);
-        const res = await fetch("/api/generate-questions", { method: "POST", body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Generation failed.");
-        setQuestions(data.quiz.questions);
-        dispatch({ type: "START", timeLimit: 30 });
-      } catch (err) {
-        setGenError(err.message);
-      } finally {
-        setGenerating(false);
-      }
-    }
-
     return (
       <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center" style={{ background: "linear-gradient(170deg, #ffecd2 0%, #fcb69f 60%, #ff9a76 100%)" }}>
         <p className="mb-2 text-5xl">🍳</p>
@@ -632,15 +630,9 @@ export default function BattlePage() {
           </div>
         </div>
 
-        {genError && (
-          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 max-w-xs w-full text-left">
-            {genError}
-          </p>
-        )}
-
         <button
-          onClick={startBattle}
-          disabled={generating || qTypes.length === 0}
+          onClick={() => dispatch({ type: "CHARACTER_SELECT" })}
+          disabled={qTypes.length === 0}
           className="mt-8 px-10 py-4 text-lg font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-1"
           style={{
             borderRadius: 50,
@@ -648,9 +640,117 @@ export default function BattlePage() {
             boxShadow: "0 5px 0 #b86a20, 0 8px 24px rgba(0,0,0,0.15)",
           }}
         >
-          {generating ? "Generating questions…" : "Start Battle 🍕"}
+          Next →
         </button>
         <a href="/dashboard" className="mt-4 text-sm font-semibold" style={{ color: "#8b5e3c" }}>← Back to dashboard</a>
+      </div>
+    );
+  }
+
+  // ── Character Select ──
+  if (state.status === "character_select") {
+    const aiChar = playerChar === "spud" ? "tomato" : "spud";
+
+    async function startBattle() {
+      setGenerating(true);
+      setGenError(null);
+      try {
+        const form = new FormData();
+        form.append("source", "text");
+        form.append("title", studySet.title);
+        form.append("count", String(qCount));
+        form.append("types", qTypes.join(","));
+        form.append("text", studySet.text);
+        const res = await fetch("/api/generate-questions", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Generation failed.");
+        setQuestions(data.quiz.questions);
+        dispatch({ type: "START", timeLimit: 30 });
+      } catch (err) {
+        setGenError(err.message);
+      } finally {
+        setGenerating(false);
+      }
+    }
+
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center" style={{ background: "linear-gradient(170deg, #ffecd2 0%, #fcb69f 60%, #ff9a76 100%)" }}>
+        <h1 className="mb-1 text-4xl font-bold tracking-tight" style={{ color: "#5a2d0c", textShadow: "0 2px 0 rgba(255,255,255,0.4)" }}>Pick Your Chef</h1>
+        <p className="mb-8 font-semibold" style={{ color: "#8b5e3c" }}>{studySet.title}</p>
+
+        {/* Character cards */}
+        <div className="mb-8 flex flex-wrap justify-center gap-4">
+          {CHARACTERS.map((c) => {
+            const selected = playerChar === c.id;
+            return (
+              <div
+                key={c.id}
+                onClick={() => !c.locked && setPlayerChar(c.id)}
+                style={{
+                  width: 120, padding: "16px 10px", borderRadius: 16, textAlign: "center",
+                  background: selected ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.55)",
+                  border: selected ? "3px solid #e8a849" : "3px solid transparent",
+                  transform: selected ? "scale(1.06)" : "none",
+                  boxShadow: selected ? "0 6px 20px rgba(0,0,0,0.12)" : "0 3px 10px rgba(0,0,0,0.07)",
+                  cursor: c.locked ? "not-allowed" : "pointer",
+                  opacity: c.locked ? 0.55 : 1,
+                  transition: "all 0.2s ease",
+                  position: "relative",
+                }}
+              >
+                {c.locked && <span style={{ position: "absolute", top: 6, right: 8, fontSize: 12 }}>🔒</span>}
+                <div style={{ fontSize: 52, filter: c.locked ? "grayscale(0.7)" : "none", marginBottom: 6 }}>{c.emoji}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#5a2d0c" }}>{c.name}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "#8b5e3c", marginTop: 2 }}>{c.tag}</div>
+                {c.dlc && (
+                  <div style={{ marginTop: 6, fontSize: 8, fontWeight: 700, background: "#e8a849", color: "#fff", borderRadius: 10, padding: "2px 6px" }}>
+                    {c.dlc}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* VS preview */}
+        <div className="mb-8 flex items-center gap-6">
+          <div>
+            <div style={{ fontSize: 40 }}>{CHARACTERS.find(c => c.id === playerChar)?.emoji}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#5a2d0c", marginTop: 4 }}>YOU</div>
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "rgba(90,45,12,0.25)" }}>VS</div>
+          <div>
+            <div style={{ fontSize: 40 }}>{CHARACTERS.find(c => c.id === aiChar)?.emoji}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#5a2d0c", marginTop: 4 }}>BOT</div>
+          </div>
+        </div>
+
+        {genError && (
+          <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600" style={{ maxWidth: 320 }}>
+            {genError}
+          </p>
+        )}
+
+        <button
+          onClick={startBattle}
+          disabled={generating}
+          className="px-10 py-4 text-lg font-bold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed active:translate-y-1"
+          style={{
+            borderRadius: 50,
+            background: "linear-gradient(135deg, #e8a849, #e07b30)",
+            boxShadow: "0 5px 0 #b86a20, 0 8px 24px rgba(0,0,0,0.15)",
+            letterSpacing: 1,
+          }}
+        >
+          {generating ? "Generating questions…" : "🔥 Let's Cook! 🔥"}
+        </button>
+        <button
+          onClick={() => dispatch({ type: "BACK_TO_SETUP" })}
+          className="mt-4 text-sm font-semibold"
+          style={{ color: "#8b5e3c", background: "none", border: "none", cursor: "pointer" }}
+        >
+          ← Back
+        </button>
       </div>
     );
   }
@@ -789,9 +889,9 @@ export default function BattlePage() {
       {/* HP Bars */}
       <div className="px-4 pt-3 md:px-8">
         <div className="mx-auto flex max-w-2xl items-center gap-4 rounded-2xl px-5 py-3" style={{ background: "rgba(40,30,20,0.88)" }}>
-          <HPBar hp={state.aiHP} label="Chef Bot" align="left" />
+          <HPBar hp={state.playerHP} label="You" align="left" />
           <span className="shrink-0 text-lg font-bold" style={{ color: "#ffd166", letterSpacing: 2 }}>VS</span>
-          <HPBar hp={state.playerHP} label="You" align="right" />
+          <HPBar hp={state.aiHP} label="Chef Bot" align="right" />
         </div>
       </div>
 
@@ -837,21 +937,31 @@ export default function BattlePage() {
             fontFamily: "sans-serif",
           }}>VS</div>
 
-          {/* Spud — left (player) */}
+          {/* Player — left */}
           <div style={{
             position: "absolute", left: 18, bottom: 28,
             display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           }}>
-            <Character sprite={SPRITES.spud_right} side="left" animState={charStates.spud} />
+            <Character
+              sprite={playerChar === "spud" ? SPRITES.spud_right : SPRITES.tomato_left}
+              side="left"
+              animState={charStates[playerChar]}
+              flip={playerChar === "tomato"}
+            />
             <span style={{ fontSize: 10, color: "#fff", fontWeight: 700, letterSpacing: 1, textShadow: "0 1px 3px rgba(0,0,0,0.5)" }}>YOU</span>
           </div>
 
-          {/* Tomato — right (Chef Bot) */}
+          {/* Bot — right */}
           <div style={{
             position: "absolute", right: 18, bottom: 28,
             display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
           }}>
-            <Character sprite={SPRITES.tomato_left} side="right" animState={charStates.tomato} />
+            <Character
+              sprite={playerChar === "spud" ? SPRITES.tomato_left : SPRITES.spud_right}
+              side="right"
+              animState={charStates[playerChar === "spud" ? "tomato" : "spud"]}
+              flip={playerChar === "tomato"}
+            />
             <span style={{ fontSize: 10, color: "#fff", fontWeight: 700, letterSpacing: 1, textShadow: "0 1px 3px rgba(0,0,0,0.5)" }}>BOT</span>
           </div>
 

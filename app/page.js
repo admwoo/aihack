@@ -77,6 +77,13 @@ export default async function Home() {
               >
                 Sign In
               </a>
+              <a
+                href="/upload"
+                className="w-full rounded-full border px-8 py-4 text-base font-bold transition-all hover:brightness-95 sm:w-auto"
+                style={{ borderColor: "#e8cdb5", color: "#8b5e3c", background: "rgba(255,252,248,0.6)" }}
+              >
+                Try as Guest
+              </a>
             </>
           )}
         </div>

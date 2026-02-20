@@ -19,6 +19,7 @@ function wordCount(text) {
 export default function Dashboard() {
   const router = useRouter();
   const [studySets, setStudySets] = useState(null); // null = loading
+  const [user, setUser] = useState(null);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -30,28 +31,41 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("study_sets")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error) {
-        setStudySets(data.map((s) => ({
-          id: s.id,
-          title: s.title,
-          text: s.text,
-          createdAt: s.created_at,
-          sourceFileName: s.source_file_name,
-        })));
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      if (user) {
+        const { data, error } = await supabase
+          .from("study_sets")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error) {
+          setStudySets(data.map((s) => ({
+            id: s.id,
+            title: s.title,
+            text: s.text,
+            createdAt: s.created_at,
+            sourceFileName: s.source_file_name,
+          })));
+        } else {
+          setStudySets([]);
+        }
       } else {
-        setStudySets([]);
+        const stored = localStorage.getItem("sq_studysets");
+        setStudySets(stored ? JSON.parse(stored) : []);
       }
     }
     load();
   }, []);
 
   async function deleteStudySet(id) {
-    const supabase = createClient();
-    await supabase.from("study_sets").delete().eq("id", id);
+    if (user) {
+      const supabase = createClient();
+      await supabase.from("study_sets").delete().eq("id", id);
+    } else {
+      const updated = studySets.filter((s) => s.id !== id);
+      localStorage.setItem("sq_studysets", JSON.stringify(updated));
+    }
     setStudySets(studySets.filter((s) => s.id !== id));
   }
 
@@ -69,12 +83,21 @@ export default function Dashboard() {
           >
             + Add Material
           </a>
-          <button
-            onClick={handleSignOut}
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
-          >
-            Sign Out
-          </button>
+          {user ? (
+            <button
+              onClick={handleSignOut}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <a
+              href="/login"
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+            >
+              Sign In
+            </a>
+          )}
         </div>
       </nav>
 
